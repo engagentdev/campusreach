@@ -46,7 +46,7 @@ export function WeeklyDigestEmail({
   return (
     <Html>
       <Head />
-      <Preview>New volunteer opportunities this week on CampusReach</Preview>
+      <Preview>Upcoming volunteer opportunities on CampusReach</Preview>
       <Body style={main}>
         <Container style={container}>
           <Section style={header}>
@@ -57,39 +57,31 @@ export function WeeklyDigestEmail({
             <Text style={greeting}>Hi {volunteerName},</Text>
 
             <Text style={paragraph}>
-              Here are the new volunteer opportunities posted this week. Find
+              Here are the upcoming volunteer opportunities. Find
               something that fits your schedule and make a difference!
             </Text>
 
-            {events.length > 0 ? (
-              <>
-                {events.map((event) => (
-                  <Section key={event.id} style={eventCard}>
-                    <Text style={eventTitle}>{event.title}</Text>
-                    {event.organizationName && (
-                      <Text style={eventOrg}>{event.organizationName}</Text>
-                    )}
-                    <Text style={eventDetails}>
-                      {formatDate(event.startsAt)} &bull; {event.location}
-                    </Text>
-                    <Text style={eventSpots}>
-                      {event.volunteersNeeded - event.volunteersSignedUp} spots
-                      remaining
-                    </Text>
-                  </Section>
-                ))}
+            {events.map((event) => (
+              <Section key={event.id} style={eventCard}>
+                <Text style={eventTitle}>{event.title}</Text>
+                {event.organizationName && (
+                  <Text style={eventOrg}>{event.organizationName}</Text>
+                )}
+                <Text style={eventDetails}>
+                  {formatDate(event.startsAt)} &bull; {event.location}
+                </Text>
+                <Text style={eventSpots}>
+                  {event.volunteersNeeded - event.volunteersSignedUp} spots
+                  remaining
+                </Text>
+              </Section>
+            ))}
 
-                <Section style={ctaSection}>
-                  <Button style={button} href={`${baseUrl}/vol/explore`}>
-                    View All Opportunities
-                  </Button>
-                </Section>
-              </>
-            ) : (
-              <Text style={paragraph}>
-                No new opportunities were posted this week, but check back soon!
-              </Text>
-            )}
+            <Section style={ctaSection}>
+              <Button style={button} href={`${baseUrl}/vol/explore`}>
+                View All Opportunities
+              </Button>
+            </Section>
           </Section>
 
           <Hr style={hr} />

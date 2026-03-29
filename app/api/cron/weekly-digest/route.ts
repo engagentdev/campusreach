@@ -10,27 +10,11 @@ export async function GET(request: Request) {
   }
 
   try {
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://campusreach.org"
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://campusreach.net"
 
-    // Get volunteers who have weekly digest enabled
-    const preferences = await prisma.notificationPreference.findMany({
+    // Get all upcoming events
+    const upcomingEvents = await prisma.event.findMany({
       where: {
-        weeklyDigest: true,
-        email: { not: null },
-      },
-    })
-
-    if (preferences.length === 0) {
-      return NextResponse.json({ message: "No subscribers for weekly digest" })
-    }
-
-    // Get events created in the last 7 days that are upcoming
-    const oneWeekAgo = new Date()
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7)
-
-    const newEvents = await prisma.event.findMany({
-      where: {
-        createdAt: { gte: oneWeekAgo },
         startsAt: { gt: new Date() },
       },
       include: {
@@ -42,11 +26,27 @@ export async function GET(request: Request) {
         },
       },
       orderBy: { startsAt: "asc" },
-      take: 10,
+      take: 15,
     })
 
+    if (upcomingEvents.length === 0) {
+      return NextResponse.json({ message: "No upcoming events, skipping digest" })
+    }
+
+    // Get subscribers who have weekly digest enabled
+    const preferences = await prisma.notificationPreference.findMany({
+      where: {
+        weeklyDigest: true,
+        email: { not: null },
+      },
+    })
+
+    if (preferences.length === 0) {
+      return NextResponse.json({ message: "No subscribers for weekly digest" })
+    }
+
     // Format events for email
-    const formattedEvents = newEvents.map((event) => ({
+    const formattedEvents = upcomingEvents.map((event) => ({
       id: event.id,
       title: event.title,
       organizationName: event.organization?.name || null,
@@ -56,16 +56,29 @@ export async function GET(request: Request) {
       volunteersSignedUp: event._count.signups,
     }))
 
-    // Get volunteer names for personalization
+    // Get user names for personalization — check both volunteers and org members
     const userIds = preferences.map((p) => p.userId)
-    const volunteers = await prisma.volunteer.findMany({
-      where: { userId: { in: userIds } },
-      select: { userId: true, firstName: true, name: true },
-    })
 
-    const volunteerMap = new Map(
-      volunteers.map((v) => [v.userId, v.firstName || v.name || "Volunteer"])
-    )
+    const [volunteers, orgMembers] = await Promise.all([
+      prisma.volunteer.findMany({
+        where: { userId: { in: userIds } },
+        select: { userId: true, firstName: true, name: true },
+      }),
+      prisma.organizationMember.findMany({
+        where: { userId: { in: userIds } },
+        select: { userId: true, name: true },
+      }),
+    ])
+
+    const nameMap = new Map<string, string>()
+    for (const v of volunteers) {
+      nameMap.set(v.userId, v.firstName || v.name || "Volunteer")
+    }
+    for (const m of orgMembers) {
+      if (!nameMap.has(m.userId)) {
+        nameMap.set(m.userId, m.name || "Team Member")
+      }
+    }
 
     // Send emails
     let sentCount = 0
@@ -74,26 +87,22 @@ export async function GET(request: Request) {
     for (const pref of preferences) {
       if (!pref.email) continue
 
-      const volunteerName = volunteerMap.get(pref.userId) || "Volunteer"
+      const recipientName = nameMap.get(pref.userId) || "Volunteer"
 
       try {
         const html = await renderWeeklyDigest({
-          volunteerName,
+          volunteerName: recipientName,
           events: formattedEvents,
           baseUrl,
         })
 
         const result = await sendEmail({
           to: pref.email,
-          subject:
-            newEvents.length > 0
-              ? `${newEvents.length} new volunteer opportunities this week`
-              : "Your weekly CampusReach update",
+          subject: `${upcomingEvents.length} upcoming volunteer opportunities`,
           html,
         })
 
         if (result.success) {
-          // Log the sent email
           await prisma.emailLog.create({
             data: {
               userId: pref.userId,
@@ -115,7 +124,7 @@ export async function GET(request: Request) {
       message: "Weekly digest completed",
       sent: sentCount,
       errors: errorCount,
-      eventsIncluded: newEvents.length,
+      eventsIncluded: upcomingEvents.length,
     })
   } catch (error) {
     console.error("Weekly digest cron error:", error)

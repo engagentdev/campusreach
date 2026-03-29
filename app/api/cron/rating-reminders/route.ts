@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://campusreach.org"
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://campusreach.net"
 
     // Find events that ended approximately 24 hours ago (23-25 hour window)
     const now = new Date()
@@ -64,50 +64,63 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: "No events to send reminders for" })
     }
 
+    // Collect all volunteer userIds from signups for batch queries
+    const allVolunteerUserIds = [
+      ...new Set(
+        recentlyEndedEvents.flatMap((e) =>
+          e.signups.map((s) => s.volunteer.userId)
+        )
+      ),
+    ]
+    const allEventIds = recentlyEndedEvents.map((e) => e.id)
+
+    // Batch-fetch preferences and existing email logs to avoid N+1
+    const [preferences, existingLogs] = await Promise.all([
+      prisma.notificationPreference.findMany({
+        where: { userId: { in: allVolunteerUserIds } },
+      }),
+      prisma.emailLog.findMany({
+        where: {
+          userId: { in: allVolunteerUserIds },
+          type: "RATING_REMINDER",
+          referenceId: { in: allEventIds },
+        },
+      }),
+    ])
+
+    const prefMap = new Map(preferences.map((p) => [p.userId, p]))
+    // Key: "userId:eventId"
+    const logSet = new Set(
+      existingLogs.map((l) => `${l.userId}:${l.referenceId}`)
+    )
+
     let sentCount = 0
     let errorCount = 0
     let skippedCount = 0
 
     for (const event of recentlyEndedEvents) {
-      // Get volunteers who signed up but haven't rated
       const ratedVolunteerIds = new Set(event.ratings.map((r) => r.volunteerId))
 
       for (const signup of event.signups) {
         const volunteer = signup.volunteer
 
-        // Skip if already rated
         if (ratedVolunteerIds.has(volunteer.id)) {
           skippedCount++
           continue
         }
 
-        // Skip if no email
         if (!volunteer.email) {
           skippedCount++
           continue
         }
 
-        // Check if we already sent a reminder for this event
-        const existingLog = await prisma.emailLog.findFirst({
-          where: {
-            userId: volunteer.userId,
-            type: "RATING_REMINDER",
-            referenceId: event.id,
-          },
-        })
-
-        if (existingLog) {
+        if (logSet.has(`${volunteer.userId}:${event.id}`)) {
           skippedCount++
           continue
         }
 
-        // Check user notification preferences
-        const preference = await prisma.notificationPreference.findUnique({
-          where: { userId: volunteer.userId },
-        })
-
-        // Default to sending if no preference set, otherwise check emailUpdates
-        if (preference && !preference.emailUpdates) {
+        const pref = prefMap.get(volunteer.userId)
+        if (pref && !pref.emailUpdates) {
           skippedCount++
           continue
         }
@@ -130,7 +143,6 @@ export async function GET(request: Request) {
           })
 
           if (result.success) {
-            // Log the sent email
             await prisma.emailLog.create({
               data: {
                 userId: volunteer.userId,

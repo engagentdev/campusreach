@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "crypto"
 import { Resend } from "resend"
 
 // Lazy-loaded Resend client to avoid build errors
@@ -59,5 +60,9 @@ export function verifyCronSecret(request: Request): boolean {
     return false
   }
 
-  return authHeader === `Bearer ${cronSecret}`
+  const expected = `Bearer ${cronSecret}`
+  if (!authHeader || authHeader.length !== expected.length) {
+    return false
+  }
+  return timingSafeEqual(Buffer.from(authHeader), Buffer.from(expected))
 }

@@ -43,7 +43,7 @@ export function MessageNotificationEmail({
             <Text style={greeting}>Hi {recipientName},</Text>
 
             <Section style={messageBox}>
-              <Text style={messageCount > 1 ? messageCountTextMultiple : messageCountTextSingle}>
+              <Text style={messageCountText}>
                 {messageCount}
               </Text>
               <Text style={messageLabel}>
@@ -131,15 +131,7 @@ const messageBox = {
   margin: "16px 0",
 }
 
-const messageCountTextSingle = {
-  fontSize: "48px",
-  fontWeight: "bold" as const,
-  color: "#18181b",
-  margin: "0",
-  lineHeight: "1",
-}
-
-const messageCountTextMultiple = {
+const messageCountText = {
   fontSize: "48px",
   fontWeight: "bold" as const,
   color: "#18181b",
